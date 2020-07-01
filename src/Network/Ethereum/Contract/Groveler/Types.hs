@@ -2,10 +2,12 @@ module Network.Ethereum.Contract.Groveler.Types where
 
 import Data.Text (Text)
 import qualified Data.Text as T
-import Language.Solidity.Abi (Declaration(..), ContractAbi(..),EventArg(..), FunctionArg(..))
+import Language.Solidity.Abi (parseSolidityType, Declaration(..), ContractAbi(..),EventArg(..), FunctionArg(..))
 import Data.Solidity.Prim.Int (IntN, UIntN)
 import Data.Solidity.Prim.Bytes (Bytes, BytesN)
 import Data.Solidity.Prim.Address (Address)
+import Network.Ethereum.Api.Types (changeData, changeTopics, Change)
+import Data.Bifunctor (first, Bifunctor(second))
 
 
 data Abi = Abi { abi :: ContractAbi
@@ -140,7 +142,7 @@ data SolidityIntValue a = SolidityInt8 (a 8)
                         | SolidityInt248 (a 248)
                         | SolidityInt256 (a 256)
 
-data SoliditySizedBytesValue =  SolidityBytes1 (BytesN 1)
+data SoliditySizedBytesValue = SolidityBytes1 (BytesN 1)
                              | SolidityBytes2 (BytesN 2)
                              | SolidityBytes3 (BytesN 3)
                              | SolidityBytes4 (BytesN 4)
@@ -185,3 +187,27 @@ data SolidityValue = SInt  (SolidityIntValue IntN)
                    | SAddress Address
                    | SListN SolidityValue Int
                    | SList [SolidityValue]
+
+parseEventChange :: [EventArg] -> Change -> Either Text [SolidityValue]
+parseEventChange eas ch = parseEventArgs eas (drop 1 $ changeTopics ch) (changeData ch)
+ where 
+  parseEventArgs [] _ [] = pure []
+  parseEventArgs [] _ d = Left $ "parseEventChange: Found more data when expected to have none, " <> T.pack (show d)
+  parseEventArgs (ea : eas') ts d = do
+    argType <- first (T.pack . show) $ parseSolidityType (eveArgType ea)
+    if eveArgIndexed ea then do
+        (v, ts') <- parseSolidityValueFromTopics ts
+        vs <- parseEventArgs eas' ts' d
+        pure $ [v] <> vs
+      else do
+        (v, d') <- parseSolidityValueFromData d
+        vs <- parseEventArgs eas' ts d'
+        pure $ [v] <> vs
+
+
+
+
+    
+-- parseEventChange (ea : _) ch = do
+
+--   undefined
